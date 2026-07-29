@@ -24,6 +24,8 @@ import {
   LovedOneProfile,
   MemoryCard,
   ReviewSession,
+  VisitCardStat,
+  VisitImpact,
   cardResponseMeta,
   defaultProfile,
   firstName,
@@ -39,6 +41,9 @@ const KEYS = {
   reviews: 'cc.reviews',
   gallery: 'cc.gallery',
   songs: 'cc.songs',
+  visitReactions: 'cc.visitReactions',
+  visitImpact: 'cc.visitImpact',
+  plannedActivities: 'cc.plannedActivities',
   hasOnboarded: 'cc.hasOnboarded',
   hasDismissedSampleHint: 'cc.hasDismissedSampleHint',
   hasSeededSamplesRemaining: 'cc.hasSeededSamplesRemaining',
@@ -55,6 +60,9 @@ export interface Store {
   reviewSessions: ReviewSession[];
   galleryPhotos: GalleryPhoto[];
   comfortSongs: ComfortSong[];
+  visitReactions: Record<string, VisitCardStat>;
+  visitImpact: VisitImpact;
+  plannedActivities: string[];
 
   hasOnboarded: boolean;
   wantsTour: boolean;
@@ -88,6 +96,11 @@ export interface Store {
   updateComfortSong: (s: ComfortSong) => void;
   deleteComfortSong: (s: ComfortSong) => void;
 
+  recordVisitReaction: (cardID: string, response: CardResponse) => void;
+  completeVisit: () => void;
+  togglePlannedActivity: (cardID: string) => void;
+  clearPlannedActivities: () => void;
+
   journalInsights: () => Insight[];
 }
 
@@ -120,6 +133,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [reviewSessions, setReviewSessions] = useState<ReviewSession[]>([]);
   const [galleryPhotos, setGalleryPhotos] = useState<GalleryPhoto[]>([]);
   const [comfortSongs, setComfortSongs] = useState<ComfortSong[]>([]);
+  const [visitReactions, setVisitReactions] = useState<
+    Record<string, VisitCardStat>
+  >({});
+  const [visitImpact, setVisitImpact] = useState<VisitImpact>({
+    completedVisits: 0,
+    litUpMoments: 0,
+    niceMoments: 0,
+  });
+  const [plannedActivities, setPlannedActivities] = useState<string[]>([]);
 
   const [hasOnboarded, setHasOnboardedState] = useState(false);
   const [wantsTour, setWantsTour] = useState(true);
@@ -143,6 +165,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         reviews,
         gallery,
         songs,
+        visitReacts,
+        impact,
+        planned,
         onboarded,
         dismissedHint,
         seedRemaining,
@@ -155,6 +180,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         loadJSON<ReviewSession[]>(KEYS.reviews, []),
         loadJSON<GalleryPhoto[]>(KEYS.gallery, []),
         loadJSON<ComfortSong[]>(KEYS.songs, []),
+        loadJSON<Record<string, VisitCardStat>>(KEYS.visitReactions, {}),
+        loadJSON<VisitImpact>(KEYS.visitImpact, {
+          completedVisits: 0,
+          litUpMoments: 0,
+          niceMoments: 0,
+        }),
+        loadJSON<string[]>(KEYS.plannedActivities, []),
         loadJSON<boolean>(KEYS.hasOnboarded, false),
         loadJSON<boolean>(KEYS.hasDismissedSampleHint, false),
         loadJSON<boolean | null>(KEYS.hasSeededSamplesRemaining, null),
@@ -172,6 +204,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setReviewSessions(reviews);
       setGalleryPhotos(gallery);
       setComfortSongs(songs);
+      setVisitReactions(visitReacts ?? {});
+      setVisitImpact(impact);
+      setPlannedActivities(planned ?? []);
       setHasOnboardedState(onboarded);
       setHasDismissedSampleHintState(dismissedHint);
       setHasSeededSamplesRemaining(
@@ -197,6 +232,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => persist(KEYS.reviews, reviewSessions), [reviewSessions, persist]);
   useEffect(() => persist(KEYS.gallery, galleryPhotos), [galleryPhotos, persist]);
   useEffect(() => persist(KEYS.songs, comfortSongs), [comfortSongs, persist]);
+  useEffect(
+    () => persist(KEYS.visitReactions, visitReactions),
+    [visitReactions, persist]
+  );
+  useEffect(() => persist(KEYS.visitImpact, visitImpact), [visitImpact, persist]);
+  useEffect(
+    () => persist(KEYS.plannedActivities, plannedActivities),
+    [plannedActivities, persist]
+  );
   useEffect(() => persist(KEYS.hasOnboarded, hasOnboarded), [hasOnboarded, persist]);
   useEffect(
     () => persist(KEYS.hasDismissedSampleHint, hasDismissedSampleHint),
@@ -368,6 +412,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       reviewSessions,
       galleryPhotos,
       comfortSongs,
+      visitReactions,
+      visitImpact,
+      plannedActivities,
       hasOnboarded,
       wantsTour,
       hasDismissedSampleHint,
@@ -408,6 +455,42 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteComfortSong: (s) =>
         setComfortSongs((prev) => prev.filter((x) => x.id !== s.id)),
 
+      recordVisitReaction: (cardID, response) => {
+        setVisitReactions((prev) => {
+          const cur = prev[cardID] ?? { pos: 0, neg: 0 };
+          const positive = cardResponseMeta[response].isPositive;
+          return {
+            ...prev,
+            [cardID]: {
+              pos: cur.pos + (positive ? 1 : 0),
+              neg: cur.neg + (positive ? 0 : 1),
+            },
+          };
+        });
+        if (response === 'litUp' || response === 'smiled') {
+          setVisitImpact((prev) => ({
+            ...prev,
+            litUpMoments: prev.litUpMoments + (response === 'litUp' ? 1 : 0),
+            niceMoments: prev.niceMoments + (response === 'smiled' ? 1 : 0),
+          }));
+        }
+      },
+
+      completeVisit: () =>
+        setVisitImpact((prev) => ({
+          ...prev,
+          completedVisits: prev.completedVisits + 1,
+        })),
+
+      togglePlannedActivity: (cardID) =>
+        setPlannedActivities((prev) =>
+          prev.includes(cardID)
+            ? prev.filter((x) => x !== cardID)
+            : [...prev, cardID]
+        ),
+
+      clearPlannedActivities: () => setPlannedActivities([]),
+
       journalInsights,
     };
   }, [
@@ -420,6 +503,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     reviewSessions,
     galleryPhotos,
     comfortSongs,
+    visitReactions,
+    visitImpact,
+    plannedActivities,
     hasOnboarded,
     wantsTour,
     hasDismissedSampleHint,

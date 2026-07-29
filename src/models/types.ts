@@ -225,6 +225,21 @@ export const cardResponseMeta: Record<
   hardMoment: { label: 'Hard moment', icon: 'cloud', isPositive: false },
 };
 
+// Running tally of how a visit-mode card has landed over time. Drives the
+// adaptive ordering of the visit deck (liked cards float up, hard ones sink).
+export interface VisitCardStat {
+  pos: number;
+  neg: number;
+}
+
+// Gentle visit history for encouragement on Home. These are moments the
+// caregiver noticed, not scores or targets.
+export interface VisitImpact {
+  completedVisits: number;
+  litUpMoments: number;
+  niceMoments: number;
+}
+
 // MARK: - CardOutcome
 
 export interface CardOutcome {
@@ -274,7 +289,7 @@ export const functioningLevelMeta: Record<
     label: 'More support',
     capability: 0,
     caption:
-      'Mostly nonverbal. Connects best through touch, sights, and sounds.',
+      'You carry more of the visit with short stories and activities they can watch, hear, or join.',
   },
   middle: {
     label: 'Some support',
@@ -286,7 +301,7 @@ export const functioningLevelMeta: Record<
     label: 'Light support',
     capability: 2,
     caption:
-      'Can still chat and share stories. Give time and follow their lead.',
+      'They can lead parts of the conversation and take an active role in shared activities.',
   },
 };
 

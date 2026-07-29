@@ -7,7 +7,7 @@ module.exports = {
       colors: {
         // Ported from src/theme.ts (careInk / careBackground and accents).
         ink: 'rgb(26, 56, 51)',
-        background: 'rgb(245, 250, 245)',
+        background: '#F0F4F3',
         teal: {
           DEFAULT: '#2E8B8B',
           dark: '#1F6F6F',

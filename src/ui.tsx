@@ -11,7 +11,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { cssInterop } from 'nativewind';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, font, fontFamilyForWeight } from './theme';
 
 // Allow SafeAreaView to accept a Tailwind className.
@@ -48,9 +48,23 @@ export function Screen({
   contentClassName?: string;
   edges?: ('top' | 'bottom' | 'left' | 'right')[];
 }) {
+  // Read insets from the hook (seeded synchronously by initialWindowMetrics)
+  // instead of the SafeAreaView component, which re-measures natively and can
+  // flash a 0 inset on the first frame of a freshly presented modal — that was
+  // the "title too high, then snaps down" bug.
+  const insets = useSafeAreaInsets();
+  const active = edges ?? ['top', 'left', 'right'];
+  const safePadding = {
+    paddingTop: active.includes('top') ? insets.top : 0,
+    paddingBottom: active.includes('bottom') ? insets.bottom : 0,
+    paddingLeft: active.includes('left') ? insets.left : 0,
+    paddingRight: active.includes('right') ? insets.right : 0,
+  };
+
   const inner = scroll ? (
     <ScrollView
-      contentContainerClassName={`p-6 pb-16 ${contentClassName ?? ''}`}
+      contentContainerStyle={{ padding: 24, paddingBottom: 64 }}
+      contentContainerClassName={contentClassName ?? ''}
       showsVerticalScrollIndicator={false}
     >
       {children}
@@ -59,12 +73,9 @@ export function Screen({
     <View className={`flex-1 ${contentClassName ?? ''}`}>{children}</View>
   );
   return (
-    <SafeAreaView
-      className={`flex-1 bg-background ${className ?? ''}`}
-      edges={edges ?? ['top', 'left', 'right']}
-    >
+    <View className={`flex-1 bg-background ${className ?? ''}`} style={safePadding}>
       {inner}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -98,6 +109,67 @@ export function T({
   );
 }
 
+// Inline-styled flex row. Uses plain RN styles (not NativeWind className) so the
+// layout is applied synchronously on first mount — avoids the "too tall then
+// snaps into place" flicker when a screen is presented.
+export function Row({
+  children,
+  gap,
+  between,
+  align = 'center',
+  style,
+}: {
+  children: React.ReactNode;
+  gap?: number;
+  between?: boolean;
+  align?: ViewStyle['alignItems'];
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: align,
+          ...(gap != null ? { gap } : null),
+          ...(between ? { justifyContent: 'space-between' } : null),
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
+// Inline-styled circular icon container (replaces w-N h-N rounded-full className).
+export function IconBubble({
+  name,
+  color,
+  size = 40,
+  iconSize = 22,
+}: {
+  name: string;
+  color: string;
+  size?: number;
+  iconSize?: number;
+}) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: color + '22',
+      }}
+    >
+      <Icon name={name} size={iconSize} color={color} />
+    </View>
+  );
+}
+
 export function PrimaryButton({
   title,
   onPress,
@@ -108,6 +180,9 @@ export function PrimaryButton({
   color = colors.teal,
   className,
   large,
+  alignLeft,
+  height,
+  titleSize,
 }: {
   title: string;
   onPress: () => void;
@@ -118,15 +193,27 @@ export function PrimaryButton({
   color?: string;
   className?: string;
   large?: boolean;
+  alignLeft?: boolean;
+  height?: number;
+  titleSize?: number;
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
-      className={`rounded-2xl items-center justify-center active:opacity-85 ${
-        large ? 'py-6 px-7' : 'py-4 px-6'
-      } ${disabled ? 'opacity-40' : ''} ${className ?? ''}`}
-      style={{ backgroundColor: color }}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={subtitle}
+      accessibilityState={{ disabled: !!(disabled || loading) }}
+      className={`rounded-2xl justify-center active:opacity-85 ${
+        alignLeft ? 'items-start' : 'items-center'
+      } ${large ? 'px-7' : 'px-6'} ${disabled ? 'opacity-40' : ''} ${className ?? ''}`}
+      style={{
+        backgroundColor: color,
+        ...(height != null
+          ? { height }
+          : { paddingVertical: large ? 24 : 16 }),
+      }}
     >
       {loading ? (
         <ActivityIndicator color={colors.white} />
@@ -137,8 +224,14 @@ export function PrimaryButton({
           ) : null}
           <View className="shrink">
             <Text
-              className={`text-white ${large ? 'text-3xl' : 'text-xl'}`}
-              style={{ fontFamily: fontFamilyForWeight('700') }}
+              className="text-white"
+              style={{
+                fontFamily: fontFamilyForWeight('700'),
+                fontSize: titleSize ?? (large ? 30 : 20),
+                lineHeight: (titleSize ?? (large ? 30 : 20)) * 1.15,
+                textAlign: alignLeft ? 'left' : 'center',
+                includeFontPadding: false,
+              }}
             >
               {title}
             </Text>
@@ -157,23 +250,92 @@ export function PrimaryButton({
   );
 }
 
-export function SecondaryButton({
+export function GradientButton({
   title,
+  subtitle,
   onPress,
-  color = colors.secondary,
+  icon,
+  color,
   className,
 }: {
   title: string;
+  subtitle?: string;
   onPress: () => void;
-  color?: string;
+  icon?: string;
+  color: string;
   className?: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityHint={subtitle}
+      className={`rounded-2xl overflow-hidden active:opacity-85 ${className ?? ''}`}
+      style={{ backgroundColor: color, height: 96, paddingHorizontal: 22, justifyContent: 'center' }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        {icon ? <Icon name={icon} size={28} color={colors.white} /> : null}
+        <View style={{ flexShrink: 1 }}>
+          <Text
+            style={{
+              fontFamily: fontFamilyForWeight('700'),
+              color: colors.white,
+              fontSize: 24,
+              lineHeight: 28,
+            }}
+          >
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text
+              style={{
+                fontFamily: fontFamilyForWeight('400'),
+                color: 'rgba(255,255,255,0.85)',
+                fontSize: 15,
+                lineHeight: 19,
+                marginTop: 2,
+              }}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+export function SecondaryButton({
+  title,
+  onPress,
+  color = colors.secondary,
+  className,
+  titleSize,
+}: {
+  title: string;
+  onPress: () => void;
+  color?: string;
+  className?: string;
+  titleSize?: number;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={title}
       className={`py-3 items-center active:opacity-60 ${className ?? ''}`}
     >
-      <Text className="text-base" style={{ color, fontFamily: fontFamilyForWeight('600') }}>
+      <Text
+        style={{
+          color,
+          fontFamily: fontFamilyForWeight('600'),
+          fontSize: titleSize ?? 16,
+          lineHeight: (titleSize ?? 16) * 1.2,
+          textAlign: 'center',
+          includeFontPadding: false,
+        }}
+      >
         {title}
       </Text>
     </Pressable>
@@ -196,6 +358,7 @@ export function Card({
     return (
       <Pressable
         onPress={onPress}
+        accessibilityRole="button"
         className={`${cardClass} active:opacity-90`}
         style={style}
       >
